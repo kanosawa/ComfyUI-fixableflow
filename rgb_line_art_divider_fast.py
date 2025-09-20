@@ -271,12 +271,30 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     height, width = base_image_cv.shape[:2]
     layers_list = []
     
+    # データ検証用の関数
+    def validate_and_clip_channels(channels):
+        """チャンネルデータを検証してuint8範囲にクリップ"""
+        validated = []
+        for ch in channels:
+            # NumPy配列に変換してクリップ
+            ch_array = np.array(ch, dtype=np.float32)
+            ch_array = np.clip(ch_array, 0, 255)
+            ch_array = ch_array.astype(np.uint8)
+            validated.append(ch_array)
+        return validated
+    
     # 背景レイヤーを追加
     bg_arr = base_image_cv[:, :, [2, 1, 0]]  # BGRからRGBに変換
+    # データを確実にuint8にクリップ
+    bg_arr = np.clip(bg_arr, 0, 255).astype(np.uint8)
+    
     if base_image_cv.shape[2] == 4:
-        channels = [bg_arr[:, :, 0], bg_arr[:, :, 1], bg_arr[:, :, 2], base_image_cv[:, :, 3]]
+        alpha_channel = np.clip(base_image_cv[:, :, 3], 0, 255).astype(np.uint8)
+        channels = [bg_arr[:, :, 0], bg_arr[:, :, 1], bg_arr[:, :, 2], alpha_channel]
     else:
         channels = [bg_arr[:, :, 0], bg_arr[:, :, 1], bg_arr[:, :, 2]]
+    
+    channels = validate_and_clip_channels(channels)
     
     bg_layer = nested_layers.Image(
         name="Background",
@@ -295,11 +313,19 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     
     # 色領域レイヤーを追加
     for layer_data, name in zip(color_layers, layer_names):
+        # データをクリップしてuint8に確実に変換
+        layer_data = np.clip(layer_data, 0, 255).astype(np.uint8)
         rgb_data = layer_data[:, :, [2, 1, 0]]  # BGRからRGBに変換
+        
         if layer_data.shape[2] == 4:
-            channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2], layer_data[:, :, 3]]
+            alpha_channel = layer_data[:, :, 3]
+            channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2], alpha_channel]
         else:
-            channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2]]
+            # アルファチャンネルがない場合は、不透明なアルファを追加
+            alpha_channel = np.ones((height, width), dtype=np.uint8) * 255
+            channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2], alpha_channel]
+        
+        channels = validate_and_clip_channels(channels)
         
         layer = nested_layers.Image(
             name=name,
@@ -317,11 +343,18 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
         layers_list.append(layer)
     
     # 線画レイヤーを最上位に追加
+    line_art_cv = np.clip(line_art_cv, 0, 255).astype(np.uint8)
     line_rgb = line_art_cv[:, :, [2, 1, 0]]  # BGRからRGBに変換
+    
     if line_art_cv.shape[2] == 4:
-        channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2], line_art_cv[:, :, 3]]
+        alpha_channel = line_art_cv[:, :, 3]
+        channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2], alpha_channel]
     else:
-        channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2]]
+        # アルファチャンネルがない場合は、不透明なアルファを追加
+        alpha_channel = np.ones((height, width), dtype=np.uint8) * 255
+        channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2], alpha_channel]
+    
+    channels = validate_and_clip_channels(channels)
     
     line_layer = nested_layers.Image(
         name="Line Art",
@@ -339,9 +372,20 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     layers_list.append(line_layer)
     
     # PSDファイルとして保存
-    output = nested_layers.nested_layers_to_psd(layers_list, color_mode=3)  # RGB mode
-    with open(filename, 'wb') as f:
-        output.write(f)
+    print(f"[Fast] Saving PSD with {len(layers_list)} layers...")
+    try:
+        output = nested_layers.nested_layers_to_psd(layers_list, color_mode=3)  # RGB mode
+        with open(filename, 'wb') as f:
+            output.write(f)
+        print(f"[Fast] PSD saved successfully: {filename}")
+    except Exception as e:
+        print(f"[Fast] ERROR saving PSD: {str(e)}")
+        # デバッグ情報を出力
+        for i, layer in enumerate(layers_list):
+            print(f"  Layer {i}: {layer.name}")
+            for j, ch in enumerate(layer.channels):
+                print(f"    Channel {j}: shape={ch.shape}, dtype={ch.dtype}, min={ch.min()}, max={ch.max()}")
+        raise
     
     return filename
 
