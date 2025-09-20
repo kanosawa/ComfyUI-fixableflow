@@ -251,6 +251,9 @@ def create_region_layers(base_image_cv, color_regions):
         alpha = np.ones((base_image_cv.shape[0], base_image_cv.shape[1], 1), dtype=np.uint8) * 255
         base_image_cv = np.concatenate([base_image_cv, alpha], axis=2)
     
+    # base_image_cvの値を確認
+    base_image_cv = np.clip(base_image_cv, 0, 255).astype(np.uint8)
+    
     for color, mask in color_regions.items():
         # マスクを適用してレイヤーを作成
         # 完全に透明な背景から開始
@@ -268,7 +271,7 @@ def create_region_layers(base_image_cv, color_regions):
         # アルファチャンネルをマスクから設定
         layer[:, :, 3] = mask
         
-        # データの整合性チェック
+        # データの整合性チェック - 確実に0-255の範囲に
         layer = np.clip(layer, 0, 255).astype(np.uint8)
         
         layers.append(layer)
@@ -289,16 +292,30 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     height, width = base_image_cv.shape[:2]
     layers_list = []
     
-    # 背景レイヤーを追加
-    bg_arr = base_image_cv[:, :, [2, 1, 0]]  # BGRからRGBに変換
-    bg_arr = np.clip(bg_arr, 0, 255).astype(np.uint8)
+    # 入力画像のデータ型と範囲を確実に修正
+    base_image_cv = np.clip(base_image_cv, 0, 255).astype(np.uint8)
+    line_art_cv = np.clip(line_art_cv, 0, 255).astype(np.uint8)
     
-    if base_image_cv.shape[2] == 4:
-        alpha_channel = np.clip(base_image_cv[:, :, 3], 0, 255).astype(np.uint8)
-        channels = [bg_arr[:, :, 0], bg_arr[:, :, 1], bg_arr[:, :, 2], alpha_channel]
+    # 背景レイヤーを追加
+    # BGRからRGBに変換し、各チャンネルを2次元配列として分離
+    if base_image_cv.shape[2] >= 3:
+        # 各チャンネルを2次元配列として取得（copyで独立したメモリ領域を確保）
+        r_channel = base_image_cv[:, :, 2].copy().astype(np.uint8)
+        g_channel = base_image_cv[:, :, 1].copy().astype(np.uint8)
+        b_channel = base_image_cv[:, :, 0].copy().astype(np.uint8)
+        
+        # リスト形式でチャンネルを作成
+        channels = [r_channel, g_channel, b_channel]
+        
+        if base_image_cv.shape[2] == 4:
+            alpha_channel = base_image_cv[:, :, 3].copy().astype(np.uint8)
+        else:
+            alpha_channel = np.full((height, width), 255, dtype=np.uint8)
+        channels.append(alpha_channel)
     else:
-        # 3チャンネルのみ（アルファなし）
-        channels = [bg_arr[:, :, 0], bg_arr[:, :, 1], bg_arr[:, :, 2]]
+        # グレースケールの場合
+        gray_channel = base_image_cv[:, :, 0].copy().astype(np.uint8)
+        channels = [gray_channel]
     
     bg_layer = nested_layers.Image(
         name="Background",
@@ -317,17 +334,26 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     
     # 色領域レイヤーを追加
     for layer_data, name in zip(color_layers, layer_names):
-        # データをクリップしてuint8に確実に変換
+        # データを確実にuint8に変換
         layer_data = np.clip(layer_data, 0, 255).astype(np.uint8)
-        rgb_data = layer_data[:, :, [2, 1, 0]]  # BGRからRGBに変換
         
-        if layer_data.shape[2] == 4:
-            alpha_channel = layer_data[:, :, 3]
-            channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2], alpha_channel]
+        # 各チャンネルを2次元配列として取得
+        if layer_data.shape[2] >= 3:
+            r_channel = layer_data[:, :, 2].copy().astype(np.uint8)  # BGRのBチャンネル→R
+            g_channel = layer_data[:, :, 1].copy().astype(np.uint8)  # BGRのGチャンネル→G
+            b_channel = layer_data[:, :, 0].copy().astype(np.uint8)  # BGRのRチャンネル→B
+            
+            channels = [r_channel, g_channel, b_channel]
+            
+            if layer_data.shape[2] == 4:
+                alpha_channel = layer_data[:, :, 3].copy().astype(np.uint8)
+            else:
+                alpha_channel = np.full((height, width), 255, dtype=np.uint8)
+            channels.append(alpha_channel)
         else:
-            # アルファチャンネルがない場合は、不透明なアルファを追加
-            alpha_channel = np.ones((height, width), dtype=np.uint8) * 255
-            channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2], alpha_channel]
+            # グレースケールの場合
+            gray_channel = layer_data[:, :, 0].copy().astype(np.uint8)
+            channels = [gray_channel]
         
         layer = nested_layers.Image(
             name=name,
@@ -345,16 +371,23 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
         layers_list.append(layer)
     
     # 線画レイヤーを最上位に追加
-    line_art_cv = np.clip(line_art_cv, 0, 255).astype(np.uint8)
-    line_rgb = line_art_cv[:, :, [2, 1, 0]]  # BGRからRGBに変換
-    
-    if line_art_cv.shape[2] == 4:
-        alpha_channel = line_art_cv[:, :, 3]
-        channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2], alpha_channel]
+    if line_art_cv.shape[2] >= 3:
+        # 各チャンネルを2次元配列として取得
+        r_channel = line_art_cv[:, :, 2].copy().astype(np.uint8)  # BGRのBチャンネル→R
+        g_channel = line_art_cv[:, :, 1].copy().astype(np.uint8)  # BGRのGチャンネル→G  
+        b_channel = line_art_cv[:, :, 0].copy().astype(np.uint8)  # BGRのRチャンネル→B
+        
+        channels = [r_channel, g_channel, b_channel]
+        
+        if line_art_cv.shape[2] == 4:
+            alpha_channel = line_art_cv[:, :, 3].copy().astype(np.uint8)
+        else:
+            alpha_channel = np.full((height, width), 255, dtype=np.uint8)
+        channels.append(alpha_channel)
     else:
-        # アルファチャンネルがない場合は、不透明なアルファを追加
-        alpha_channel = np.ones((height, width), dtype=np.uint8) * 255
-        channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2], alpha_channel]
+        # グレースケールの場合
+        gray_channel = line_art_cv[:, :, 0].copy().astype(np.uint8)
+        channels = [gray_channel]
     
     line_layer = nested_layers.Image(
         name="Line Art",
@@ -381,6 +414,8 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
         print(f"[Fast] PSD saved successfully: {filename}")
     except Exception as e:
         print(f"[Fast] ERROR saving PSD: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise
     
     return filename
