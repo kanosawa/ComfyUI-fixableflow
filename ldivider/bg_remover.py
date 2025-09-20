@@ -5,8 +5,14 @@ from sklearn.cluster import KMeans, MiniBatchKMeans
 
 from .ld_convertor import rgb2df, df2rgba
 
-import huggingface_hub
-import onnxruntime as rt
+# onnxruntimeはオプショナル（簡略化版では使用しない）
+try:
+    import onnxruntime as rt
+    ONNX_AVAILABLE = True
+except ImportError:
+    rt = None
+    ONNX_AVAILABLE = False
+
 import copy
 from PIL import Image
 
@@ -18,15 +24,30 @@ from random import randint
 from typing import Any, Callable, Dict, List, Tuple
 
 
-# Declare Execution Providers
-providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-
-# Download and host the model
-model_path = huggingface_hub.hf_hub_download(
-    "skytnt/anime-seg", "isnetis.onnx")
-rmbg_model = rt.InferenceSession(model_path, providers=providers)
+# ONNXモデルの初期化（オプショナル）
+if ONNX_AVAILABLE:
+    try:
+        import huggingface_hub
+        # Declare Execution Providers
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        # Download and host the model
+        model_path = huggingface_hub.hf_hub_download(
+            "skytnt/anime-seg", "isnetis.onnx")
+        rmbg_model = rt.InferenceSession(model_path, providers=providers)
+    except Exception as e:
+        print(f"Warning: Could not load ONNX model: {e}")
+        ONNX_AVAILABLE = False
+        rmbg_model = None
+else:
+    rmbg_model = None
 
 def get_mask(img, s=1024):
+    """ONNXモデルを使用してマスクを取得（利用できない場合は単純なマスクを返す）"""
+    if not ONNX_AVAILABLE or rmbg_model is None:
+        # ONNXが利用できない場合、全体を前景とする単純なマスクを返す
+        h, w = img.shape[:-1]
+        return np.ones([h, w, 1], dtype=np.float32)
+    
     img = (img / 255).astype(np.float32)
     dim = img.shape[2]
     if dim == 4:
