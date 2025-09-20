@@ -15,7 +15,7 @@ import cv2
 from collections import defaultdict
 import pytoshop
 from pytoshop.core import PsdFile
-from pytoshop.layers import Layer, PixelLayer
+from pytoshop.layers import PixelLayer
 
 # パス設定
 comfy_path = os.path.dirname(folder_paths.__file__)
