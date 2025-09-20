@@ -289,21 +289,8 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     height, width = base_image_cv.shape[:2]
     layers_list = []
     
-    # データ検証用の関数
-    def validate_and_clip_channels(channels):
-        """チャンネルデータを検証してuint8範囲にクリップ"""
-        validated = []
-        for ch in channels:
-            # NumPy配列に変換してクリップ
-            ch_array = np.array(ch, dtype=np.float32)
-            ch_array = np.clip(ch_array, 0, 255)
-            ch_array = ch_array.astype(np.uint8)
-            validated.append(ch_array)
-        return validated
-    
     # 背景レイヤーを追加
     bg_arr = base_image_cv[:, :, [2, 1, 0]]  # BGRからRGBに変換
-    # データを確実にuint8にクリップ
     bg_arr = np.clip(bg_arr, 0, 255).astype(np.uint8)
     
     if base_image_cv.shape[2] == 4:
@@ -312,8 +299,6 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     else:
         # 3チャンネルのみ（アルファなし）
         channels = [bg_arr[:, :, 0], bg_arr[:, :, 1], bg_arr[:, :, 2]]
-    
-    channels = validate_and_clip_channels(channels)
     
     bg_layer = nested_layers.Image(
         name="Background",
@@ -344,8 +329,6 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
             alpha_channel = np.ones((height, width), dtype=np.uint8) * 255
             channels = [rgb_data[:, :, 0], rgb_data[:, :, 1], rgb_data[:, :, 2], alpha_channel]
         
-        channels = validate_and_clip_channels(channels)
-        
         layer = nested_layers.Image(
             name=name,
             visible=True,
@@ -373,8 +356,6 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
         alpha_channel = np.ones((height, width), dtype=np.uint8) * 255
         channels = [line_rgb[:, :, 0], line_rgb[:, :, 1], line_rgb[:, :, 2], alpha_channel]
     
-    channels = validate_and_clip_channels(channels)
-    
     line_layer = nested_layers.Image(
         name="Line Art",
         visible=True,
@@ -392,19 +373,6 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     
     # PSDファイルとして保存
     print(f"[Fast] Saving PSD with {len(layers_list)} layers...")
-    
-    # デバッグ：レイヤー情報を詳細に出力
-    print("[Fast] Layer details before saving:")
-    for i, layer in enumerate(layers_list):
-        print(f"  Layer {i}: {layer.name}")
-        if hasattr(layer, 'channels') and layer.channels:
-            for j, ch in enumerate(layer.channels):
-                if isinstance(ch, np.ndarray):
-                    print(f"    Channel {j}: shape={ch.shape}, dtype={ch.dtype}, min={ch.min()}, max={ch.max()}")
-                else:
-                    print(f"    Channel {j}: Not a numpy array! Type={type(ch)}, Value={ch}")
-        else:
-            print(f"    No channels attribute or empty channels")
     
     try:
         output = nested_layers.nested_layers_to_psd(layers_list, color_mode=3)  # RGB mode
