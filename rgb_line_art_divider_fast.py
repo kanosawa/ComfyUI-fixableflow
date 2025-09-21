@@ -438,8 +438,8 @@ class RGBLineArtDividerFast:
             }
         }
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "INT", "STRING", "STRING")
-    RETURN_NAMES = ("composite", "base_color", "layer_count", "psd_path", "download_link")
+    RETURN_TYPES = ("IMAGE", "IMAGE", "INT", "STRING")
+    RETURN_NAMES = ("composite", "base_color", "layer_count", "psd_path")
     FUNCTION = "execute"
     CATEGORY = "LayerDivider"
     OUTPUT_NODE = True
@@ -531,23 +531,12 @@ class RGBLineArtDividerFast:
             
             print("[RGBLineArtDividerFast] Execution completed successfully!")
             
-            # ダウンロードリンクを生成
-            # ComfyUIのファイルサーバーURLを生成
-            # ファイル名のみを取得
-            import os as os_module
-            file_basename = os_module.path.basename(filename)
-            # ComfyUIのダウンロードURL形式に変換
-            download_url = f"/view?filename={file_basename}&subfolder=&type=output&folder_type=ComfyUI-LayerDivider/output"
-            
-            print(f"[RGBLineArtDividerFast] Download URL: {download_url}")
-            
             # 出力
             return (
                 to_comfy_img(composite),
                 to_comfy_img(base_color_cv),
                 len(color_regions),
-                filename,
-                download_url
+                filename
             )
         
         except Exception as e:
