@@ -315,7 +315,9 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
     else:
         # グレースケールの場合
         gray_channel = base_image_cv[:, :, 0].copy().astype(np.uint8)
-        channels = [gray_channel]
+        # グレースケールでもRGBAチャンネルが必要
+        channels = [gray_channel, gray_channel, gray_channel, 
+                   np.full((height, width), 255, dtype=np.uint8)]
     
     bg_layer = nested_layers.Image(
         name="Background",
@@ -353,7 +355,9 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
         else:
             # グレースケールの場合
             gray_channel = layer_data[:, :, 0].copy().astype(np.uint8)
-            channels = [gray_channel]
+            # グレースケールでもRGBAチャンネルが必要
+            channels = [gray_channel, gray_channel, gray_channel, 
+                       np.full((height, width), 255, dtype=np.uint8)]
         
         layer = nested_layers.Image(
             name=name,
@@ -371,23 +375,34 @@ def save_psd_with_nested_layers(base_image_cv, line_art_cv, color_layers, layer_
         layers_list.append(layer)
     
     # 線画レイヤーを最上位に追加
+    # 線画データのクリッピングとデータ型変換
+    line_art_cv = np.clip(line_art_cv, 0, 255).astype(np.uint8)
+    
     if line_art_cv.shape[2] >= 3:
         # 各チャンネルを2次元配列として取得
         r_channel = line_art_cv[:, :, 2].copy().astype(np.uint8)  # BGRのBチャンネル→R
         g_channel = line_art_cv[:, :, 1].copy().astype(np.uint8)  # BGRのGチャンネル→G  
         b_channel = line_art_cv[:, :, 0].copy().astype(np.uint8)  # BGRのRチャンネル→B
         
-        channels = [r_channel, g_channel, b_channel]
-        
+        # チャンネルデータが全て0の場合の対策（線画が黒のみの場合）
+        # アルファチャンネルの情報から線画を復元
         if line_art_cv.shape[2] == 4:
             alpha_channel = line_art_cv[:, :, 3].copy().astype(np.uint8)
+            # アルファから線画の黒色部分を生成（アルファが高い部分を黒に）
+            line_intensity = 255 - alpha_channel  # アルファを反転して線画の濃度に
+            r_channel = line_intensity.copy()
+            g_channel = line_intensity.copy()
+            b_channel = line_intensity.copy()
         else:
             alpha_channel = np.full((height, width), 255, dtype=np.uint8)
-        channels.append(alpha_channel)
+        
+        channels = [r_channel, g_channel, b_channel, alpha_channel]
     else:
         # グレースケールの場合
         gray_channel = line_art_cv[:, :, 0].copy().astype(np.uint8)
-        channels = [gray_channel]
+        # グレースケールでもRGBAチャンネルが必要
+        channels = [gray_channel, gray_channel, gray_channel, 
+                   np.full((height, width), 255, dtype=np.uint8)]
     
     line_layer = nested_layers.Image(
         name="Line Art",
