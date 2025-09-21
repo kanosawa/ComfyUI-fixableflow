@@ -1,56 +1,43 @@
 /**
- * RGBLineArtDividerFast - Simple Web Extension
- * Adds a simple manual download button to the node
+ * RGBLineArtDividerFast Web Extension
+ * Adds a manual download button for PSD files
  */
 
 import { app } from "../../scripts/app.js";
 
 app.registerExtension({
-    name: "ComfyUI-fixableflow.RGBLineArtDividerFastSimple",
+    name: "ComfyUI-fixableflow.RGBLineArtDividerFast",
     
     async nodeCreated(node) {
         // Only apply to RGBLineArtDividerFast nodes
         if (node.comfyClass === "RGBLineArtDividerFast") {
-            console.log("Adding simple download button to RGBLineArtDividerFast node");
+            console.log("RGBLineArtDividerFast: Adding download button");
             
-            // Get the 4th widget (psd_path output) value when available
-            const getOutputValue = () => {
-                // Check if node has been executed and has outputs
-                if (node.widgets_values && node.widgets_values.length > 3) {
-                    return node.widgets_values[3];
-                }
-                
-                // Alternative: check the connected widgets
-                if (node.widgets) {
-                    for (let widget of node.widgets) {
-                        if (widget.name === "psd_path" && widget.value) {
-                            return widget.value;
-                        }
-                    }
-                }
-                
-                return null;
-            };
+            // Store the last known filename
+            let lastFilename = null;
             
-            // Add a simple button that checks for the filename
-            const button = node.addWidget(
+            // Add download button
+            const downloadButton = node.addWidget(
                 "button",
-                "Download PSD (Manual)",
+                "Download PSD",
                 "Download PSD",
                 () => {
-                    console.log("Manual download button clicked");
+                    console.log("Download button clicked");
                     
-                    // Try to get filename from output value
-                    let filename = getOutputValue();
+                    // Use the last known filename or prompt for input
+                    let filename = lastFilename || prompt(
+                        "Enter the PSD filename:\n" + 
+                        "(You can find it in the server console after running the workflow)\n" +
+                        "Example: output_rgb_fast_normal_abc123def.psd"
+                    );
                     
-                    if (!filename) {
-                        // Prompt user to enter filename if not found
-                        filename = prompt("Enter the PSD filename (e.g., output_rgb_fast_normal_abc123.psd):");
-                    }
-                    
-                    if (filename) {
+                    if (filename && typeof filename === 'string') {
                         // Clean up the filename (remove path if present)
-                        filename = filename.split('/').pop() || filename.split('\\').pop() || filename;
+                        if (filename.includes('/')) {
+                            filename = filename.split('/').pop();
+                        } else if (filename.includes('\\')) {
+                            filename = filename.split('\\').pop();
+                        }
                         
                         console.log("Downloading:", filename);
                         
@@ -66,15 +53,22 @@ app.registerExtension({
                         link.click();
                         document.body.removeChild(link);
                         
+                        // Store the filename for next time
+                        lastFilename = filename;
+                        
+                        // Update button label
+                        downloadButton.name = `Download: ${filename}`;
+                        
                         console.log("Download initiated for:", filename);
                     }
                 }
             );
             
-            // Store button reference
-            node.downloadButton = button;
+            // Style the button
+            downloadButton.color = "#4CAF50";
+            downloadButton.bgcolor = "#333333";
             
-            console.log("Simple download button added to node");
+            console.log("RGBLineArtDividerFast: Button added");
         }
     }
 });
