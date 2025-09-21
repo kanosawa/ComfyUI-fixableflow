@@ -1,6 +1,6 @@
 /**
  * RGBLineArtDividerFast Web Extension
- * Auto-captures PSD filename and enables one-click download
+ * Simple manual input with memory for PSD download
  */
 
 import { app } from "../../scripts/app.js";
@@ -10,174 +10,149 @@ app.registerExtension({
     name: "ComfyUI-fixableflow.RGBLineArtDividerFast",
     
     async nodeCreated(node) {
-        // Only apply to RGBLineArtDividerFast nodes
+        // Only apply to RGBLineArtDividerFast nodes  
         if (node.comfyClass === "RGBLineArtDividerFast") {
-            console.log("RGBLineArtDividerFast: Adding auto-download button");
+            console.log("RGBLineArtDividerFast: Adding download button");
             
-            // Store the last generated filename
-            let currentFilename = null;
+            // Store the last known filename
+            let lastFilename = localStorage.getItem('rgbDividerLastPSD') || null;
             
             // Add download button
             const downloadButton = node.addWidget(
                 "button",
                 "Download PSD",
-                "⬇ Download PSD (Run workflow first)",
+                lastFilename ? `⬇ Download: ${lastFilename}` : "⬇ Download PSD",
                 () => {
-                    if (currentFilename) {
-                        console.log("Downloading:", currentFilename);
+                    // Prompt with the last known filename as default
+                    const filename = prompt(
+                        "Enter the PSD filename from server console:\n" +
+                        "(Example: output_rgb_fast_normal_G7kZ3I7mV9.psd)",
+                        lastFilename || ""
+                    );
+                    
+                    if (filename && filename.includes('.psd')) {
+                        // Extract just the filename from full path if needed
+                        const cleanFilename = filename.split('/').pop() || filename.split('\\').pop() || filename;
+                        
+                        console.log("Downloading:", cleanFilename);
+                        
+                        // Save for next time
+                        lastFilename = cleanFilename;
+                        localStorage.setItem('rgbDividerLastPSD', cleanFilename);
+                        
+                        // Update button text
+                        downloadButton.name = `⬇ Download: ${cleanFilename}`;
                         
                         // Create download URL
-                        const downloadUrl = `/view?filename=${encodeURIComponent(currentFilename)}&type=output`;
+                        const downloadUrl = `/view?filename=${encodeURIComponent(cleanFilename)}&type=output`;
                         
                         // Create and click download link
                         const link = document.createElement('a');
                         link.href = downloadUrl;
-                        link.download = currentFilename;
+                        link.download = cleanFilename;
                         link.style.display = 'none';
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
                         
-                        console.log("Download initiated for:", currentFilename);
-                    } else {
-                        alert("No PSD file available. Please run the workflow first.");
+                        console.log("Download initiated for:", cleanFilename);
                     }
                 }
             );
             
-            // Style the button - initially disabled appearance
-            downloadButton.color = "#888888";
-            downloadButton.bgcolor = "#333333";
+            // Style the button
+            downloadButton.color = "#4CAF50";
+            downloadButton.bgcolor = "#2E7D32";
             
-            // Override onExecuted to capture the filename automatically
+            // Listen for messages from websocket to capture PSD filename
             const originalOnExecuted = node.onExecuted;
             node.onExecuted = function(message) {
-                console.log("Node executed, checking for PSD path...");
+                console.log("Node executed, output:", message);
                 
                 if (originalOnExecuted) {
                     originalOnExecuted.apply(this, arguments);
                 }
                 
-                // Try to extract filename from the 4th output (psd_path)
-                if (node.outputs && node.outputs.length > 3) {
-                    // Wait a bit for the value to be set
-                    setTimeout(() => {
-                        // Check if the node has a widgets_values array
-                        if (node.widgets_values && node.widgets_values.length > 0) {
-                            // The last widget value might be the filename
-                            const lastValue = node.widgets_values[node.widgets_values.length - 1];
-                            if (lastValue && typeof lastValue === 'string' && lastValue.includes('.psd')) {
-                                updateFilename(lastValue);
-                            }
+                // Try to find PSD filename in the output
+                if (message) {
+                    // Check if it's an array with 4 elements (our expected output)
+                    if (Array.isArray(message) && message.length > 3) {
+                        const lastItem = message[3];
+                        if (lastItem && typeof lastItem === 'string' && lastItem.includes('.psd')) {
+                            console.log("Found PSD filename in output:", lastItem);
+                            lastFilename = lastItem;
+                            localStorage.setItem('rgbDividerLastPSD', lastItem);
+                            downloadButton.name = `⬇ Download: ${lastItem}`;
                         }
-                    }, 100);
+                    }
+                    // Check for nested arrays (ComfyUI sometimes wraps outputs)
+                    else if (Array.isArray(message)) {
+                        message.forEach(item => {
+                            if (Array.isArray(item) && item.length > 0) {
+                                const str = item[0];
+                                if (typeof str === 'string' && str.includes('.psd')) {
+                                    console.log("Found PSD filename in nested array:", str);
+                                    lastFilename = str;
+                                    localStorage.setItem('rgbDividerLastPSD', str);
+                                    downloadButton.name = `⬇ Download: ${str}`;
+                                }
+                            }
+                        });
+                    }
                 }
             };
             
-            // Function to update filename and button state
-            function updateFilename(path) {
-                // Extract just the filename from the full path
-                if (path && path.includes('.psd')) {
-                    currentFilename = path.split('/').pop() || path.split('\\').pop() || path;
-                    console.log("PSD filename captured:", currentFilename);
-                    
-                    // Update button appearance to show it's ready
-                    downloadButton.name = `⬇ Download: ${currentFilename}`;
-                    downloadButton.color = "#4CAF50";
-                    downloadButton.bgcolor = "#2E7D32";
-                }
-            }
-            
-            // Listen for execution messages from the API
-            api.addEventListener("executed", (evt) => {
-                const nodeId = evt.detail.node;
-                if (nodeId === node.id) {
-                    console.log("Node execution completed:", evt.detail);
-                    
-                    // Check if output contains filename
-                    if (evt.detail.output && evt.detail.output.psd_path) {
-                        const paths = evt.detail.output.psd_path;
-                        if (Array.isArray(paths) && paths.length > 0) {
-                            updateFilename(paths[0]);
-                        } else if (typeof paths === 'string') {
-                            updateFilename(paths);
-                        }
-                    }
-                }
-            });
-            
-            // Also listen for execution updates
-            api.addEventListener("execution", (evt) => {
-                if (evt.detail && evt.detail.output && evt.detail.node === node.id) {
-                    console.log("Execution update for node:", evt.detail);
-                }
-            });
-            
-            // Monitor for changes in connected nodes
-            const originalOnConnectionsChange = node.onConnectionsChange;
-            node.onConnectionsChange = function(type, index, connected, link_info) {
-                if (originalOnConnectionsChange) {
-                    originalOnConnectionsChange.apply(this, arguments);
-                }
-                
-                // If it's an output connection for the psd_path (index 3)
-                if (type === 2 && index === 3 && connected && link_info) {
-                    console.log("PSD path output connected:", link_info);
-                    
-                    // Try to get the value after a short delay
-                    setTimeout(() => {
-                        const graph = app.graph;
-                        if (graph && graph.links && link_info) {
-                            const link = graph.links[link_info.id];
-                            if (link && link.data) {
-                                console.log("Link data:", link.data);
-                                if (typeof link.data === 'string' && link.data.includes('.psd')) {
-                                    updateFilename(link.data);
+            // Also monitor WebSocket messages
+            const ws = api.socket;
+            if (ws) {
+                const originalOnMessage = ws.onmessage;
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        // Check for execution complete messages
+                        if (data.type === 'executed' && data.data && data.data.node === String(node.id)) {
+                            console.log("Execution complete for our node:", data.data);
+                            
+                            // Check if output contains our PSD path
+                            if (data.data.output && Array.isArray(data.data.output.psd_path)) {
+                                const psdPath = data.data.output.psd_path[0];
+                                if (psdPath && psdPath.includes('.psd')) {
+                                    const filename = psdPath.split('/').pop() || psdPath.split('\\').pop() || psdPath;
+                                    console.log("Found PSD path in WebSocket message:", filename);
+                                    lastFilename = filename;
+                                    localStorage.setItem('rgbDividerLastPSD', filename);
+                                    downloadButton.name = `⬇ Download: ${filename}`;
                                 }
                             }
                         }
-                    }, 100);
-                }
-            };
+                        
+                        // Check for console output messages
+                        if (data.type === 'console' && data.data && typeof data.data === 'string') {
+                            const consoleMsg = data.data;
+                            if (consoleMsg.includes('PSD file saved:')) {
+                                const match = consoleMsg.match(/([^/\\]+\.psd)/);
+                                if (match) {
+                                    const filename = match[1];
+                                    console.log("Found PSD filename in console output:", filename);
+                                    lastFilename = filename;
+                                    localStorage.setItem('rgbDividerLastPSD', filename);
+                                    downloadButton.name = `⬇ Download: ${filename}`;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Ignore parse errors
+                    }
+                    
+                    // Call original handler
+                    if (originalOnMessage) {
+                        originalOnMessage.apply(this, arguments);
+                    }
+                };
+            }
             
-            // Store reference to button on the node
-            node.psdDownloadButton = downloadButton;
-            node.getCurrentFilename = () => currentFilename;
-            
-            console.log("RGBLineArtDividerFast: Auto-download button added");
+            console.log("RGBLineArtDividerFast: Download button ready");
         }
     }
 });
-
-// Also try to intercept console messages to capture the filename
-(function() {
-    const originalLog = console.log;
-    console.log = function() {
-        // Check if this is a PSD file saved message
-        const message = Array.from(arguments).join(' ');
-        if (message.includes('PSD file saved:') || message.includes('Returning PSD path:')) {
-            const match = message.match(/([^/\\]+\.psd)/);
-            if (match) {
-                const filename = match[1];
-                console.warn("Captured PSD filename from console:", filename);
-                
-                // Find all RGBLineArtDividerFast nodes and update their filenames
-                if (app.graph && app.graph.nodes) {
-                    app.graph.nodes.forEach(node => {
-                        if (node.comfyClass === 'RGBLineArtDividerFast' && node.psdDownloadButton) {
-                            if (node.getCurrentFilename && !node.getCurrentFilename()) {
-                                // Only update if no filename is set yet
-                                node.psdDownloadButton.name = `⬇ Download: ${filename}`;
-                                node.psdDownloadButton.color = "#4CAF50";
-                                node.psdDownloadButton.bgcolor = "#2E7D32";
-                            }
-                        }
-                    });
-                }
-            }
-        }
-        
-        // Call the original console.log
-        originalLog.apply(console, arguments);
-    };
-})();
