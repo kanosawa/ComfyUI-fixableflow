@@ -6,22 +6,27 @@ from .rgb_line_art_divider_fast import RGBLineArtDividerFast
 
 from .layer_divider_simplified import NODE_CLASS_MAPPINGS as LEGACY_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as LEGACY_DISPLAY_MAPPINGS
 
-# 改良版FillSpaceNodeをインポート
-from .fill_space_improved_node import NODE_CLASS_MAPPINGS as FILL_IMPROVED_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as FILL_IMPROVED_DISPLAY_MAPPINGS
+# デバッグノードをインポート
+from .fill_space_debug_node import NODE_CLASS_MAPPINGS as DEBUG_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as DEBUG_DISPLAY_MAPPINGS
+
+# 拡張版塗りつぶしノードをインポート
+from .fill_area_enhanced_node import NODE_CLASS_MAPPINGS as ENHANCED_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as ENHANCED_DISPLAY_MAPPINGS
 
 # ノードマッピングを統合
 NODE_CLASS_MAPPINGS = {
     **RGB_NODE_CLASS_MAPPINGS,  # 新しいRGBノードを優先
     "RGBLineArtDividerFast": RGBLineArtDividerFast,  # 高速版を追加（更新版）
     **LEGACY_MAPPINGS,  # 既存のノードも保持
-    **FILL_IMPROVED_MAPPINGS  # 改良版FillSpaceノードを追加
+    **DEBUG_MAPPINGS,  # デバッグノードを追加
+    **ENHANCED_MAPPINGS  # 拡張版塗りつぶしノードを追加
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     **RGB_NODE_DISPLAY_NAME_MAPPINGS,  # 新しいRGBノードを優先
     "RGBLineArtDividerFast": "RGB Line Art Divider (Fast)",  # 高速版を追加
     **LEGACY_DISPLAY_MAPPINGS,  # 既存のノードも保持
-    **FILL_IMPROVED_DISPLAY_MAPPINGS  # 改良版FillSpaceノードを追加
+    **DEBUG_DISPLAY_MAPPINGS,  # デバッグノードを追加
+    **ENHANCED_DISPLAY_MAPPINGS  # 拡張版塗りつぶしノードを追加
 }
 
 # Web拡張機能の自動読み込みのためのパス設定
