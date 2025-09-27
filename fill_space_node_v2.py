@@ -100,7 +100,7 @@ def find_closest_cluster_color(pixel_color, cluster_colors):
 def process_fill_space_with_clusters_progress(binary_image, original_image, cluster_info, 
                                              invert_binary=True, progress_callback=None):
     """
-    線画の下のピクセルをクラスタ色で塗りつぶす（最適化版）
+    線画の下のピクセルをクラスタ色で塗りつぶす（K-means最適化版）
     
     Args:
         binary_image: バイナリ画像（線画）
@@ -112,6 +112,8 @@ def process_fill_space_with_clusters_progress(binary_image, original_image, clus
     Returns:
         処理済みの画像
     """
+    from sklearn.cluster import KMeans
+    
     # バイナリ画像をグレースケールに変換
     if binary_image.mode != 'L':
         binary_gray = binary_image.convert('L')
@@ -127,46 +129,60 @@ def process_fill_space_with_clusters_progress(binary_image, original_image, clus
     
     # クラスタ色情報を取得
     cluster_colors = cluster_info.get('colors', {})
+    num_clusters = len(cluster_colors)
+    
+    if num_clusters == 0:
+        return original_image
     
     # 出力画像を初期化（元画像のコピー）
     output_array = original_array.copy()
     
-    # 白ピクセル（線画の下）の座標を取得
+    # 白ピクセル（線画の下）のマスクを取得
     white_mask = binary_array == 255
-    white_pixels = np.argwhere(white_mask)
-    total_pixels = len(white_pixels)
+    total_pixels = np.sum(white_mask)
     
     print(f"[FillSpaceV2] Processing {total_pixels} pixels under line art")
-    print(f"[FillSpaceV2] Using {len(cluster_colors)} color clusters")
+    print(f"[FillSpaceV2] Using {num_clusters} color clusters from Fill Area Simple")
     
     if total_pixels == 0:
         return original_image
     
-    # 高速処理モード：ユニークな色だけを処理
+    # 線画下のピクセル色を取得
     white_pixel_colors = original_array[white_mask]
-    unique_colors, inverse_indices = np.unique(white_pixel_colors, axis=0, return_inverse=True)
     
-    print(f"[FillSpaceV2] Found {len(unique_colors)} unique colors to process")
+    # 線画下のピクセルを同じクラスタ数でK-meansクラスタリング
+    print(f"[FillSpaceV2] Clustering line art pixels into {num_clusters} clusters...")
+    kmeans = KMeans(n_clusters=min(num_clusters, len(np.unique(white_pixel_colors, axis=0))), 
+                    random_state=42, n_init=1)  # n_init=1で高速化
+    line_art_labels = kmeans.fit_predict(white_pixel_colors)
+    line_art_centers = kmeans.cluster_centers_
     
-    # クラスタ色を配列に変換（高速比較用）
-    cluster_ids = list(cluster_colors.keys())
-    cluster_rgb_array = np.array([cluster_colors[cid] for cid in cluster_ids])
+    print(f"[FillSpaceV2] Created {len(line_art_centers)} line art clusters")
     
-    # 各ユニーク色に対して最も近いクラスタを見つける（簡易版）
-    closest_colors = np.zeros((len(unique_colors), 3), dtype=np.uint8)
+    # Fill Areaのクラスタ色を配列に変換
+    fill_cluster_ids = list(cluster_colors.keys())
+    fill_cluster_array = np.array([cluster_colors[cid] for cid in fill_cluster_ids])
     
-    for i, color in enumerate(unique_colors):
-        if i % 100 == 0 and i > 0:
-            print(f"[FillSpaceV2] Progress: {i}/{len(unique_colors)} unique colors processed")
-        
-        # RGB空間での単純な距離計算（高速化のため）
-        distances = np.sum((cluster_rgb_array - color) ** 2, axis=1)
-        closest_idx = np.argmin(distances)
-        closest_colors[i] = cluster_rgb_array[closest_idx]
+    # クラスタ間のマッピングを計算（クラスタ中心同士の比較）
+    print(f"[FillSpaceV2] Computing cluster mappings ({len(line_art_centers)} x {len(fill_cluster_array)} comparisons)...")
+    cluster_mapping = np.zeros(len(line_art_centers), dtype=np.int32)
     
-    # 結果を適用
-    result_colors = closest_colors[inverse_indices]
-    output_array[white_mask] = result_colors
+    for i, center in enumerate(line_art_centers):
+        # RGB空間での単純な距離計算
+        distances = np.sum((fill_cluster_array - center) ** 2, axis=1)
+        cluster_mapping[i] = np.argmin(distances)
+    
+    print(f"[FillSpaceV2] Applying mapped colors to pixels...")
+    
+    # 各ピクセルに対してマッピングされた色を適用
+    for pixel_idx in range(len(white_pixel_colors)):
+        line_cluster_id = line_art_labels[pixel_idx]
+        fill_cluster_idx = cluster_mapping[line_cluster_id]
+        mapped_color = fill_cluster_array[fill_cluster_idx]
+        white_pixel_colors[pixel_idx] = mapped_color
+    
+    # 結果を出力画像に反映
+    output_array[white_mask] = white_pixel_colors
     
     print(f"[FillSpaceV2] Completed processing")
     
@@ -207,7 +223,7 @@ def find_closest_cluster_color_optimized(pixel_color, cluster_colors, cluster_la
 
 def process_fill_space_batch_optimized(binary_image, original_image, cluster_info, invert_binary=True):
     """
-    バッチ処理最適化版：NumPyベクトル化を使用した高速処理（RGB空間）
+    バッチ処理最適化版：K-meansでクラスタ間マッピング（超高速版）
     
     Args:
         binary_image: バイナリ画像（線画）
@@ -218,6 +234,8 @@ def process_fill_space_batch_optimized(binary_image, original_image, cluster_inf
     Returns:
         処理済みの画像
     """
+    from sklearn.cluster import KMeans
+    
     # バイナリ画像をグレースケールに変換
     if binary_image.mode != 'L':
         binary_gray = binary_image.convert('L')
@@ -233,8 +251,9 @@ def process_fill_space_batch_optimized(binary_image, original_image, cluster_inf
     
     # クラスタ色情報を取得
     cluster_colors = cluster_info.get('colors', {})
+    num_clusters = len(cluster_colors)
     
-    if not cluster_colors:
+    if num_clusters == 0:
         return original_image
     
     # 出力画像を初期化
@@ -242,32 +261,39 @@ def process_fill_space_batch_optimized(binary_image, original_image, cluster_inf
     
     # 白ピクセルのマスクを取得
     white_mask = binary_array == 255
+    total_pixels = np.sum(white_mask)
     
-    print(f"[FillSpaceV2] Batch processing {np.sum(white_mask)} pixels")
-    print(f"[FillSpaceV2] Using {len(cluster_colors)} color clusters")
+    print(f"[FillSpaceV2] Batch processing {total_pixels} pixels")
+    print(f"[FillSpaceV2] Using {num_clusters} color clusters")
     
-    # クラスタ色を配列に変換
-    cluster_ids = list(cluster_colors.keys())
-    cluster_rgb_array = np.array([cluster_colors[cid] for cid in cluster_ids])
+    if total_pixels == 0:
+        return original_image
     
     # 白ピクセルの色を取得
     white_pixel_colors = original_array[white_mask]
-    unique_colors, inverse_indices = np.unique(white_pixel_colors, axis=0, return_inverse=True)
     
-    print(f"[FillSpaceV2] Found {len(unique_colors)} unique colors to process")
+    # K-meansで線画下のピクセルをクラスタリング
+    print(f"[FillSpaceV2] K-means clustering into {num_clusters} clusters...")
+    unique_colors = np.unique(white_pixel_colors, axis=0)
+    n_clusters = min(num_clusters, len(unique_colors))
     
-    # 各ユニーク色に対して最も近いクラスタを見つける（RGB空間で高速化）
-    closest_cluster_indices = np.zeros(len(unique_colors), dtype=np.int32)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=1)
+    line_art_labels = kmeans.fit_predict(white_pixel_colors)
+    line_art_centers = kmeans.cluster_centers_
     
-    # ベクトル化された距離計算
-    for i, color in enumerate(unique_colors):
-        # RGB空間でのユークリッド距離（高速）
-        distances = np.sum((cluster_rgb_array - color) ** 2, axis=1)
-        closest_cluster_indices[i] = np.argmin(distances)
+    # Fill Areaクラスタ色を配列に変換
+    cluster_ids = list(cluster_colors.keys())
+    cluster_rgb_array = np.array([cluster_colors[cid] for cid in cluster_ids])
     
-    # 結果を適用
-    closest_colors = cluster_rgb_array[closest_cluster_indices]
-    result_colors = closest_colors[inverse_indices]
+    # クラスタ中心間のマッピングを一括計算（ベクトル化）
+    print(f"[FillSpaceV2] Computing optimal cluster mapping...")
+    # 距離行列を計算（line_art_centers x cluster_rgb_array）
+    distances = np.sum((line_art_centers[:, np.newaxis, :] - cluster_rgb_array[np.newaxis, :, :]) ** 2, axis=2)
+    cluster_mapping = np.argmin(distances, axis=1)
+    
+    # マッピングされた色を一括適用
+    mapped_colors = cluster_rgb_array[cluster_mapping]
+    result_colors = mapped_colors[line_art_labels]
     
     # 出力配列に結果を設定
     output_array[white_mask] = result_colors
