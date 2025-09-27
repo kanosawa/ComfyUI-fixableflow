@@ -142,19 +142,24 @@ class FillAreaSimpleNode:
     
     CATEGORY = "LayerDivider"
     
-    def execute(self, fill_image, region_mask):
+    def execute(self, fill_image, region_mask, **kwargs):
         """
         シンプルな塗り領域均一化処理を実行
         
         Args:
             fill_image: 塗り画像のテンソル
             region_mask: SplitAreaNodeからの領域マスク
+            **kwargs: 互換性のための追加引数（無視される）
         
         Returns:
             filled_image: 均一化された塗り画像
             preview: 処理前後の比較画像
             region_count: 検出された領域数
         """
+        
+        # 互換性のための警告メッセージ
+        if kwargs:
+            print(f"[FillAreaSimple] Warning: Ignoring unexpected arguments: {list(kwargs.keys())}")
         
         # 塗り画像をPIL Imageに変換
         fill_pil = tensor_to_pil(fill_image)
@@ -212,7 +217,7 @@ class FillAreaSimpleVisualizeNode:
     
     CATEGORY = "LayerDivider"
     
-    def execute(self, fill_image, region_mask, visualization_mode="filled", show_region_numbers=False):
+    def execute(self, fill_image, region_mask, visualization_mode="filled", show_region_numbers=False, **kwargs):
         """
         シンプルな塗り領域均一化処理を実行（可視化機能付き）
         
