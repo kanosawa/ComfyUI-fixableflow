@@ -100,7 +100,7 @@ def find_closest_cluster_color(pixel_color, cluster_colors):
 def process_fill_space_with_clusters_progress(binary_image, original_image, cluster_info, 
                                              invert_binary=True, progress_callback=None):
     """
-    線画の下のピクセルをクラスタ色で塗りつぶす（プログレスバー対応版）
+    線画の下のピクセルをクラスタ色で塗りつぶす（最適化版）
     
     Args:
         binary_image: バイナリ画像（線画）
@@ -132,52 +132,43 @@ def process_fill_space_with_clusters_progress(binary_image, original_image, clus
     output_array = original_array.copy()
     
     # 白ピクセル（線画の下）の座標を取得
-    white_pixels = np.argwhere(binary_array == 255)
+    white_mask = binary_array == 255
+    white_pixels = np.argwhere(white_mask)
     total_pixels = len(white_pixels)
     
     print(f"[FillSpaceV2] Processing {total_pixels} pixels under line art")
     print(f"[FillSpaceV2] Using {len(cluster_colors)} color clusters")
     
-    # クラスタ色をLAB色空間に事前変換（キャッシュ）
-    cluster_labs = {}
-    for cluster_id, cluster_color in cluster_colors.items():
-        cluster_labs[cluster_id] = rgb_to_lab(cluster_color)
+    if total_pixels == 0:
+        return original_image
     
-    # 処理済み色のキャッシュ（同じ色の再計算を避ける）
-    color_cache = {}
+    # 高速処理モード：ユニークな色だけを処理
+    white_pixel_colors = original_array[white_mask]
+    unique_colors, inverse_indices = np.unique(white_pixel_colors, axis=0, return_inverse=True)
     
-    # バッチ処理のサイズ
-    batch_size = 1000
+    print(f"[FillSpaceV2] Found {len(unique_colors)} unique colors to process")
     
-    # 各白ピクセルに対して処理
-    for batch_start in range(0, total_pixels, batch_size):
-        batch_end = min(batch_start + batch_size, total_pixels)
-        batch_pixels = white_pixels[batch_start:batch_end]
+    # クラスタ色を配列に変換（高速比較用）
+    cluster_ids = list(cluster_colors.keys())
+    cluster_rgb_array = np.array([cluster_colors[cid] for cid in cluster_ids])
+    
+    # 各ユニーク色に対して最も近いクラスタを見つける（簡易版）
+    closest_colors = np.zeros((len(unique_colors), 3), dtype=np.uint8)
+    
+    for i, color in enumerate(unique_colors):
+        if i % 100 == 0 and i > 0:
+            print(f"[FillSpaceV2] Progress: {i}/{len(unique_colors)} unique colors processed")
         
-        for y, x in batch_pixels:
-            # 元画像のピクセル色を取得
-            original_color = tuple(original_array[y, x])
-            
-            # キャッシュをチェック
-            if original_color in color_cache:
-                closest_color = color_cache[original_color]
-            else:
-                # 最も近いクラスタ色を見つける（最適化版）
-                closest_color = find_closest_cluster_color_optimized(
-                    original_color, cluster_colors, cluster_labs
-                )
-                # キャッシュに保存
-                color_cache[original_color] = closest_color
-            
-            # ピクセルを最も近いクラスタ色で塗りつぶす
-            output_array[y, x] = closest_color
-        
-        # プログレスバーを更新
-        if progress_callback:
-            progress = batch_end / total_pixels
-            progress_callback(batch_end, total_pixels, f"Processing pixels: {batch_end}/{total_pixels}")
+        # RGB空間での単純な距離計算（高速化のため）
+        distances = np.sum((cluster_rgb_array - color) ** 2, axis=1)
+        closest_idx = np.argmin(distances)
+        closest_colors[i] = cluster_rgb_array[closest_idx]
     
-    print(f"[FillSpaceV2] Completed processing. Cache hit rate: {len(color_cache)}/{total_pixels} unique colors")
+    # 結果を適用
+    result_colors = closest_colors[inverse_indices]
+    output_array[white_mask] = result_colors
+    
+    print(f"[FillSpaceV2] Completed processing")
     
     return Image.fromarray(output_array.astype(np.uint8))
 
@@ -216,7 +207,7 @@ def find_closest_cluster_color_optimized(pixel_color, cluster_colors, cluster_la
 
 def process_fill_space_batch_optimized(binary_image, original_image, cluster_info, invert_binary=True):
     """
-    バッチ処理最適化版：NumPyベクトル化を使用した高速処理
+    バッチ処理最適化版：NumPyベクトル化を使用した高速処理（RGB空間）
     
     Args:
         binary_image: バイナリ画像（線画）
@@ -259,36 +250,20 @@ def process_fill_space_batch_optimized(binary_image, original_image, cluster_inf
     cluster_ids = list(cluster_colors.keys())
     cluster_rgb_array = np.array([cluster_colors[cid] for cid in cluster_ids])
     
-    # クラスタ色をLAB色空間に変換（一括変換）
-    cluster_lab_array = skcolor.rgb2lab(cluster_rgb_array.reshape(-1, 1, 3) / 255.0).reshape(-1, 3)
-    
     # 白ピクセルの色を取得
     white_pixel_colors = original_array[white_mask]
     unique_colors, inverse_indices = np.unique(white_pixel_colors, axis=0, return_inverse=True)
     
     print(f"[FillSpaceV2] Found {len(unique_colors)} unique colors to process")
     
-    # 各ユニーク色に対して最も近いクラスタを見つける
+    # 各ユニーク色に対して最も近いクラスタを見つける（RGB空間で高速化）
     closest_cluster_indices = np.zeros(len(unique_colors), dtype=np.int32)
     
-    # プログレスバーを使用
-    with tqdm(total=len(unique_colors), desc="Finding closest clusters") as pbar:
-        for i, color in enumerate(unique_colors):
-            # RGB to LAB
-            color_lab = skcolor.rgb2lab(color.reshape(1, 1, 3) / 255.0).reshape(3)
-            
-            # 全クラスタとの距離を計算
-            distances = np.array([
-                skcolor.deltaE_ciede2000(
-                    color_lab.reshape(1, 1, 3),
-                    cluster_lab.reshape(1, 1, 3)
-                )[0, 0]
-                for cluster_lab in cluster_lab_array
-            ])
-            
-            # 最小距離のクラスタを選択
-            closest_cluster_indices[i] = np.argmin(distances)
-            pbar.update(1)
+    # ベクトル化された距離計算
+    for i, color in enumerate(unique_colors):
+        # RGB空間でのユークリッド距離（高速）
+        distances = np.sum((cluster_rgb_array - color) ** 2, axis=1)
+        closest_cluster_indices[i] = np.argmin(distances)
     
     # 結果を適用
     closest_colors = cluster_rgb_array[closest_cluster_indices]
@@ -296,6 +271,8 @@ def process_fill_space_batch_optimized(binary_image, original_image, cluster_inf
     
     # 出力配列に結果を設定
     output_array[white_mask] = result_colors
+    
+    print(f"[FillSpaceV2] Batch processing completed")
     
     return Image.fromarray(output_array.astype(np.uint8))
 
