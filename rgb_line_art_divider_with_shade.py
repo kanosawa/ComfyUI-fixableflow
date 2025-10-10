@@ -290,6 +290,11 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
         light_layer = np.zeros_like(base_image_cv, dtype=np.uint8)  # shade_image_cvではなくbase_image_cvのサイズで統一
         shade_layer = np.zeros_like(base_image_cv, dtype=np.uint8)
         
+        # 各レイヤーのアルファマスクを初期化（実際に書き込まれたピクセルのみを記録）
+        base_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
+        light_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
+        shade_alpha_mask = np.zeros((base_image_cv.shape[0], base_image_cv.shape[1]), dtype=np.uint8)
+        
         # マスクを確実にuint8に変換
         mask = np.clip(mask, 0, 255).astype(np.uint8)
         mask_bool = mask > 0
@@ -311,17 +316,20 @@ def create_shade_layers(base_image_cv, shade_image_cv, color_regions, luminance_
             if pixel_type == 'light':
                 # lightレイヤーに追加（shade画像から）
                 light_layer[y, x] = shade_image_cv[y, x]
+                light_alpha_mask[y, x] = 255  # このピクセルはlightレイヤーに存在
             elif pixel_type == 'shade':
                 # shadeレイヤーに追加（shade画像から）
                 shade_layer[y, x] = shade_image_cv[y, x]
+                shade_alpha_mask[y, x] = 255  # このピクセルはshadeレイヤーに存在
             else:
                 # baseレイヤーに追加（base_color画像から）
                 base_layer[y, x] = base_image_cv[y, x]
+                base_alpha_mask[y, x] = 255  # このピクセルはbaseレイヤーに存在
         
-        # 各レイヤーに共通のアルファチャンネルを設定
-        base_layer[:, :, 3] = mask
-        light_layer[:, :, 3] = mask
-        shade_layer[:, :, 3] = mask
+        # 各レイヤーに実際に書き込まれた部分のみアルファチャンネルを設定
+        base_layer[:, :, 3] = base_alpha_mask
+        light_layer[:, :, 3] = light_alpha_mask
+        shade_layer[:, :, 3] = shade_alpha_mask
         
         region_layers[color_rgb] = {
             'base': base_layer,
