@@ -31,7 +31,7 @@ class OverlayImagesNode:
     def overlay_images(self, input1, input2):
         """
         2つの画像を重ね合わせる
-        input2をinput1の上に重ねる（input2が優先される）
+        input2をinput1の上に重ねる（アルファブレンディング）
         
         Args:
             input1: 背景画像 (ComfyUI形式: torch.Tensor [B, H, W, C])
@@ -44,11 +44,20 @@ class OverlayImagesNode:
         img1 = input1[0].clone()
         img2 = input2[0].clone()
         
+        # RGBの場合はRGBAに変換（完全不透明のアルファチャンネルを追加）
+        if img1.shape[2] == 3:
+            alpha1 = torch.ones(img1.shape[0], img1.shape[1], 1, dtype=img1.dtype, device=img1.device)
+            img1 = torch.cat([img1, alpha1], dim=2)
+        
+        if img2.shape[2] == 3:
+            alpha2 = torch.ones(img2.shape[0], img2.shape[1], 1, dtype=img2.dtype, device=img2.device)
+            img2 = torch.cat([img2, alpha2], dim=2)
+        
         # サイズを揃える（input1のサイズに合わせる）
         if img1.shape[:2] != img2.shape[:2]:
             # テンソルをNumPy配列に変換
             img2_np = (img2.cpu().numpy() * 255).astype(np.uint8)
-            img2_pil = Image.fromarray(img2_np)
+            img2_pil = Image.fromarray(img2_np, mode='RGBA')
             
             # リサイズ (height, width)
             target_size = (img1.shape[1], img1.shape[0])  # (width, height) for PIL
@@ -57,14 +66,21 @@ class OverlayImagesNode:
             # テンソルに戻す
             img2 = torch.from_numpy(np.array(img2_pil).astype(np.float32) / 255.0)
         
-        # input2の黒以外の部分をマスクとして使用
-        # 黒 (0,0,0) 以外のピクセルをinput2から採用
-        # グレースケール変換して閾値判定
-        gray = img2.mean(dim=2, keepdim=True)
-        mask = (gray > 0.01).float()  # 黒に近い部分は背景を使う
+        # アルファブレンディング
+        # result_rgb = img1_rgb * (1 - alpha2) + img2_rgb * alpha2
+        rgb1 = img1[:, :, :3]
+        rgb2 = img2[:, :, :3]
+        alpha2 = img2[:, :, 3:4]  # 前景のアルファチャンネル
         
-        # マスクを使って合成
-        result = img1 * (1 - mask) + img2 * mask
+        # アルファ合成
+        result_rgb = rgb1 * (1 - alpha2) + rgb2 * alpha2
+        
+        # 結果のアルファチャンネルを計算（Porter-Duff合成）
+        alpha1 = img1[:, :, 3:4]
+        result_alpha = alpha2 + alpha1 * (1 - alpha2)
+        
+        # RGBAを結合
+        result = torch.cat([result_rgb, result_alpha], dim=2)
         
         # バッチ次元を追加
         result = result.unsqueeze(0)
