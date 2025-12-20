@@ -95,13 +95,13 @@ class SimplePSDStackNode:
             # バッチの最初の画像を取得（各入力は [B, H, W, C] 形式）
             img = image_tensor[0] if image_tensor.shape[0] > 0 else image_tensor
             
-            # テンソルをNumPy配列に変換（0-255のuint8）
-            img_np = (img.cpu().numpy() * 255).astype(np.uint8)
+            # テンソルをNumPy配列に変換（0-1の範囲を0-255に変換）
+            img_np = (img.cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
             
             # チャンネル数を確認
             has_alpha = img_np.shape[2] == 4
             
-            # RGBチャンネルを分離
+            # チャンネルを分離（RGBチャンネルはそのまま使用）
             if has_alpha:
                 channels = [
                     img_np[:, :, 0],  # R
