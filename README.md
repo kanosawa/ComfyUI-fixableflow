@@ -1,7 +1,28 @@
-[JP](README.md) | [EN](README_EN.md)
-# ComfyUI FixableFlow
+<img width="933" height="579" alt="スクリーンショット 2025-12-21 17 54 13" src="https://github.com/user-attachments/assets/1c902d42-68af-45b6-9ef6-9c38ed0720e9" />[JP](README.md)
+# FixableFlow
+![G8k8fr_bMAMe68E](https://github.com/user-attachments/assets/b1ff33c1-0ceb-42e4-94d5-d5ae1d05d705)
 
 
+FixableFlowは編集可能なイラスト生成AIを目指して作成された、画像生成AIを複数組み合わせて作られるワークフローの枠組みです。
+人がイラストを制作する工程を参考にし、工程毎に画像を生成することで生成された画像（イラスト）を任意の工程で編集可能にします。
+具体的には、イラストの制作工程を①線画、②バケツ塗り、③1影、④2影、⑤ハイライト、⑥仕上げ効果という6つ工程に分離し、各工程毎に画像を出力する事を目指します。
+v0.1では①~③までの工程に対応しており、順次④~⑥の工程についても対応していく予定です。
+
+また各工程後に出力された画像は、重ね合わせることで一枚のイラストとして出力できるように設計されており、PSDファイル形式での出力が可能となっています。
+<img width="933" height="579" alt="スクリーンショット 2025-12-21 17 54 18" src="https://github.com/user-attachments/assets/90bb7591-f897-4fd5-b56c-733ea460a07f" />
+
+<img width="933" height="579" alt="スクリーンショット 2025-12-21 17 54 13" src="https://github.com/user-attachments/assets/732566fb-629e-49be-bfd6-0e28120e1cde" />
+
+<img width="933" height="579" alt="スクリーンショット 2025-12-21 17 54 07" src="https://github.com/user-attachments/assets/c09ef9c0-f921-4c5e-a540-711ecd5be752" />
+
+<img width="933" height="579" alt="スクリーンショット 2025-12-21 17 54 02" src="https://github.com/user-attachments/assets/ffb2b773-8653-48e7-aa34-e1ba95bc9b98" />
+
+## 使用しているモデル
+v0.1におけるワークフローでは、
+
+|タスク名|モデル名|追加モデル名|
+|線画生成|cagliostrolab/animagine-xl-3.1|kataragi/ControlNet-LineartXL|
+|バケツ塗り準備|cagliostrolab/animagine-xl-3.1|kataragi/ControlNet-LineartXL|-|
 
 ## Vast.aiを用いた環境構築
 
