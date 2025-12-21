@@ -1,4 +1,4 @@
-<img width="933" height="579" alt="スクリーンショット 2025-12-21 17 54 13" src="https://github.com/user-attachments/assets/1c902d42-68af-45b6-9ef6-9c38ed0720e9" />[JP](README.md)
+[JP](README.md)
 # FixableFlow
 ![G8k8fr_bMAMe68E](https://github.com/user-attachments/assets/b1ff33c1-0ceb-42e4-94d5-d5ae1d05d705)
 
@@ -22,7 +22,7 @@ v0.1におけるワークフローでは、
 
 |タスク名|モデル名|追加モデル名|
 |線画生成|cagliostrolab/animagine-xl-3.1|kataragi/ControlNet-LineartXL|
-|バケツ塗り準備|cagliostrolab/animagine-xl-3.1|kataragi/ControlNet-LineartXL|-|
+|バケツ塗り準備|cagliostrolab/animagine-xl-3.1|-|
 
 ## Vast.aiを用いた環境構築
 
