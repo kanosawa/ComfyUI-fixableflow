@@ -1,11 +1,4 @@
-# 必須ライブラリ
 scikit-image
 scikit-learn
 pandas
 opencv-python
-
-# Note: pytoshop is no longer needed - PSD generation is now handled by frontend ag-psd
-
-# 以下のライブラリは簡略化版では不要になりました
-# segment_anything  # SAMセグメンテーション用 - 削除
-# onnx              # SAMモデル用 - 削除
